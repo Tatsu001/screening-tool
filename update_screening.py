@@ -87,13 +87,16 @@ def get_stock_data(ticker_code):
         ticker_code: 銘柄コード（例: 7203）
     
     Returns:
-        dict: 取得したデータ
+        dict: 取得したデータ（データがない場合は'-'）
     """
     try:
         # 日本株は .T を付ける
         ticker = f"{ticker_code}.T"
         stock = yf.Ticker(ticker)
         info = stock.info
+        
+        # 市場区分を取得
+        market = get_market_category(info)
         
         # 自己資本比率を計算
         equity_ratio = None
@@ -111,31 +114,93 @@ def get_stock_data(ticker_code):
             # 出来高 × 株価 ÷ 100,000,000 = 億円
             trading_value = (avg_volume * current_price) / 100000000
         
-        # データを辞書形式で返す
+        # ROE
+        roe = info.get('returnOnEquity')
+        if roe is not None:
+            roe = roe * 100  # パーセント表記
+        
+        # 売上成長率
+        revenue_growth = info.get('revenueGrowth')
+        if revenue_growth is not None:
+            revenue_growth = revenue_growth * 100  # パーセント表記
+        
+        # データを辞書形式で返す（Noneの場合は'-'に変換）
         data = {
-            'name': info.get('longName', info.get('shortName', '')),
-            'market_cap': info.get('marketCap', None),
-            'equity_ratio': equity_ratio,  # 自己資本比率（%）
-            'trading_value': trading_value,  # 売買代金（億円）
-            'trailing_pe': info.get('trailingPE', None),
-            'price_to_book': info.get('priceToBook', None),
-            'return_on_equity': info.get('returnOnEquity', None),
-            'revenue_growth': info.get('revenueGrowth', None),
+            'name': info.get('longName', info.get('shortName', '-')),
+            'market': market,
+            'market_cap': info.get('marketCap'),
+            'equity_ratio': equity_ratio,
+            'trading_value': trading_value,
+            'trailing_pe': info.get('trailingPE'),
+            'price_to_book': info.get('priceToBook'),
+            'return_on_equity': roe,
+            'revenue_growth': revenue_growth,
         }
-        
-        # ROEをパーセント表記に変換
-        if data['return_on_equity'] is not None:
-            data['return_on_equity'] = data['return_on_equity'] * 100
-        
-        # 売上成長率をパーセント表記に変換
-        if data['revenue_growth'] is not None:
-            data['revenue_growth'] = data['revenue_growth'] * 100
         
         return data
         
     except Exception as e:
         print(f"  ⚠️  {ticker_code}: データ取得エラー - {str(e)}")
         return None
+
+def get_market_category(info):
+    """
+    市場区分を取得
+    
+    Args:
+        info: yfinanceのinfo辞書
+    
+    Returns:
+        str: プライム/スタンダード/グロース/その他
+    """
+    # まずはデフォルト
+    market = 'プライム'
+    
+    # exchangeやquoteTypeから判定
+    exchange = info.get('exchange', '')
+    quote_type = info.get('quoteType', '')
+    
+    # 市場情報がある場合
+    if 'market' in info:
+        market_info = str(info.get('market', '')).lower()
+        if 'growth' in market_info or 'mothers' in market_info:
+            market = 'グロース'
+        elif 'standard' in market_info:
+            market = 'スタンダード'
+    
+    # longNameから判定
+    long_name = info.get('longName', '')
+    if 'growth' in long_name.lower():
+        market = 'グロース'
+    
+    return market
+
+def format_value(value, format_type='number', decimals=1):
+    """
+    値をフォーマット（Noneの場合は'-'を返す）
+    
+    Args:
+        value: フォーマットする値
+        format_type: 'number', 'percent', 'currency'
+        decimals: 小数点以下の桁数
+    
+    Returns:
+        フォーマットされた値または'-'
+    """
+    if value is None:
+        return '-'
+    
+    try:
+        if format_type == 'number':
+            return round(value, decimals)
+        elif format_type == 'percent':
+            return round(value, decimals)
+        elif format_type == 'currency':
+            return round(value, 0)
+        else:
+            return value
+    except:
+        return '-'
 
 def get_portfolio_stocks(wb):
     """
@@ -253,52 +318,58 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'A{row}'].border = thin_border
         
         # B列: 銘柄名
-        ws[f'B{row}'] = data['name'] if data['name'] else ''
+        name = data['name'] if data['name'] and data['name'] != '-' else '-'
+        ws[f'B{row}'] = name
         ws[f'B{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'B{row}'].alignment = center_align
         ws[f'B{row}'].border = thin_border
         
-        # C列: 市場区分（デフォルト: プライム）
-        ws[f'C{row}'] = 'プライム'
+        # C列: 市場区分
+        ws[f'C{row}'] = data.get('market', 'プライム')
         ws[f'C{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'C{row}'].alignment = center_align
         ws[f'C{row}'].border = thin_border
         
         # D列: 時価総額
-        if data['market_cap']:
-            ws[f'D{row}'] = data['market_cap'] / 100000000  # 億円単位
+        market_cap = format_value(data['market_cap'] / 100000000 if data['market_cap'] else None, 'currency')
+        ws[f'D{row}'] = market_cap
+        if market_cap != '-':
             ws[f'D{row}'].number_format = '#,##0'
         ws[f'D{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'D{row}'].alignment = center_align
         ws[f'D{row}'].border = thin_border
         
         # E列: 自己資本比率
-        if data['equity_ratio']:
-            ws[f'E{row}'] = data['equity_ratio']
+        equity_ratio = format_value(data['equity_ratio'], 'number', 1)
+        ws[f'E{row}'] = equity_ratio
+        if equity_ratio != '-':
             ws[f'E{row}'].number_format = '0.0'
         ws[f'E{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'E{row}'].alignment = center_align
         ws[f'E{row}'].border = thin_border
         
         # F列: 売買代金
-        if data['trading_value']:
-            ws[f'F{row}'] = data['trading_value']
+        trading_value = format_value(data['trading_value'], 'currency')
+        ws[f'F{row}'] = trading_value
+        if trading_value != '-':
             ws[f'F{row}'].number_format = '#,##0'
         ws[f'F{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'F{row}'].alignment = center_align
         ws[f'F{row}'].border = thin_border
         
         # G列: PER
-        if data['trailing_pe']:
-            ws[f'G{row}'] = data['trailing_pe']
+        per = format_value(data['trailing_pe'], 'number', 1)
+        ws[f'G{row}'] = per
+        if per != '-':
             ws[f'G{row}'].number_format = '0.0'
         ws[f'G{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'G{row}'].alignment = center_align
         ws[f'G{row}'].border = thin_border
         
         # H列: PBR
-        if data['price_to_book']:
-            ws[f'H{row}'] = data['price_to_book']
+        pbr = format_value(data['price_to_book'], 'number', 1)
+        ws[f'H{row}'] = pbr
+        if pbr != '-':
             ws[f'H{row}'].number_format = '0.0'
         ws[f'H{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'H{row}'].alignment = center_align
@@ -310,16 +381,18 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'I{row}'].border = thin_border
         
         # J列: 売上成長率
-        if data['revenue_growth']:
-            ws[f'J{row}'] = data['revenue_growth']
+        revenue_growth = format_value(data['revenue_growth'], 'percent', 1)
+        ws[f'J{row}'] = revenue_growth
+        if revenue_growth != '-':
             ws[f'J{row}'].number_format = '0.0'
         ws[f'J{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'J{row}'].alignment = center_align
         ws[f'J{row}'].border = thin_border
         
         # K列: ROE
-        if data['return_on_equity']:
-            ws[f'K{row}'] = data['return_on_equity']
+        roe = format_value(data['return_on_equity'], 'percent', 1)
+        ws[f'K{row}'] = roe
+        if roe != '-':
             ws[f'K{row}'].number_format = '0.0'
         ws[f'K{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'K{row}'].alignment = center_align
