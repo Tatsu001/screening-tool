@@ -18,6 +18,17 @@ import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from datetime import datetime
 import time
+import os
+import glob
+
+# tkinterをインポート（ファイル選択ダイアログ用）
+try:
+    import tkinter as tk
+    from tkinter import filedialog
+    HAS_TKINTER = True
+except ImportError:
+    HAS_TKINTER = False
+    print("⚠️  tkinterが利用できません。ファイル選択ダイアログは使用できません。")
 
 # yfinanceのインストール確認
 try:
@@ -26,6 +37,7 @@ except ImportError:
     print("yfinanceがインストールされていません。")
     print("以下のコマンドでインストールしてください:")
     print("  pip install yfinance")
+    input("\nEnterキーで終了...")
     sys.exit(1)
 
 # 色定義
@@ -37,6 +49,35 @@ SUCCESS_COLOR = "D5F4E6"
 WARNING_COLOR = "FCF3CF"
 DANGER_COLOR = "FADBD8"
 PORTFOLIO_ALERT_COLOR = "FFE5CC"  # ポートフォリオ銘柄アラート色（オレンジ）
+
+def select_excel_file():
+    """
+    GUIファイル選択ダイアログでExcelファイルを選択
+    
+    Returns:
+        str: 選択されたファイルパス（キャンセル時はNone）
+    """
+    if not HAS_TKINTER:
+        return None
+    
+    # tkinterのルートウィンドウを作成（非表示）
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    
+    # ファイル選択ダイアログを表示
+    filepath = filedialog.askopenfilename(
+        title='Excelファイルを選択してください',
+        filetypes=[
+            ('Excel files', '*.xlsx'),
+            ('All files', '*.*')
+        ],
+        initialdir=os.getcwd()
+    )
+    
+    root.destroy()
+    
+    return filepath if filepath else None
 
 def get_stock_data(ticker_code):
     """
@@ -337,15 +378,78 @@ def main():
     print("📊 投資管理テンプレート - スクリーニングシート自動更新")
     print("=" * 60)
     
-    # コマンドライン引数のチェック
-    if len(sys.argv) < 2:
-        print("\n使い方:")
-        print("  python update_screening.py <Excelファイルパス>")
-        print("\n例:")
-        print("  python update_screening.py 投資管理テンプレート.xlsx")
-        sys.exit(1)
+    filepath = None
     
-    filepath = sys.argv[1]
+    # コマンドライン引数がある場合
+    if len(sys.argv) >= 2:
+        filepath = sys.argv[1]
+        print(f"\n📁 指定されたファイル: {filepath}")
+    else:
+        # GUIファイル選択ダイアログを表示
+        if HAS_TKINTER:
+            print("\n📁 ファイル選択ダイアログを開きます...")
+            print("   （ダイアログが表示されない場合は、タスクバーを確認してください）")
+            
+            filepath = select_excel_file()
+            
+            if filepath:
+                print(f"✅ 選択されたファイル: {filepath}")
+            else:
+                print("❌ ファイルが選択されませんでした")
+        
+        # GUIが使えないか、キャンセルされた場合は自動検出
+        if not filepath:
+            print("\n📁 Excelファイルを自動検出します...")
+            
+            # 候補となるファイル名
+            candidates = [
+                'investment_template.xlsx',
+                '投資管理テンプレート.xlsx',
+                '投資管理テンプレート_配列数式版.xlsx',
+            ]
+            
+            # カレントディレクトリで検索
+            for candidate in candidates:
+                if os.path.exists(candidate):
+                    filepath = candidate
+                    print(f"✅ 発見: {filepath}")
+                    break
+            
+            # 見つからない場合、xlsxファイルを全て表示
+            if not filepath:
+                xlsx_files = glob.glob('*.xlsx')
+                if xlsx_files:
+                    print("\n以下のExcelファイルが見つかりました:")
+                    for i, f in enumerate(xlsx_files, 1):
+                        print(f"  {i}. {f}")
+                    
+                    print("\n使用するファイル番号を入力してください:")
+                    try:
+                        choice = int(input("番号: ").strip())
+                        if 1 <= choice <= len(xlsx_files):
+                            filepath = xlsx_files[choice - 1]
+                            print(f"✅ 選択: {filepath}")
+                        else:
+                            print("❌ エラー: 無効な番号です")
+                            input("\nEnterキーで終了...")
+                            sys.exit(1)
+                    except (ValueError, EOFError):
+                        print("❌ エラー: 無効な入力です")
+                        input("\nEnterキーで終了...")
+                        sys.exit(1)
+                else:
+                    print("\n❌ エラー: Excelファイルが見つかりません")
+                    print("\n以下のいずれかのファイルを同じフォルダに配置してください:")
+                    print("  - investment_template.xlsx")
+                    print("  - 投資管理テンプレート.xlsx")
+                    input("\nEnterキーで終了...")
+                    sys.exit(1)
+    
+    # ファイルの存在確認
+    if not os.path.exists(filepath):
+        print(f"\n❌ エラー: ファイルが見つかりません - {filepath}")
+        input("\nEnterキーで終了...")
+        sys.exit(1)
     
     # 銘柄コードの入力
     print("\n📝 更新する銘柄コードを入力してください")
@@ -356,7 +460,10 @@ def main():
     stock_codes = []
     
     while True:
-        user_input = input("銘柄コード: ").strip()
+        try:
+            user_input = input("銘柄コード: ").strip()
+        except EOFError:
+            break
         
         if not user_input:
             break
@@ -367,6 +474,7 @@ def main():
     
     if not stock_codes:
         print("❌ エラー: 銘柄コードが入力されていません")
+        input("\nEnterキーで終了...")
         sys.exit(1)
     
     # 重複を削除
@@ -376,13 +484,26 @@ def main():
     print(f"   {', '.join(stock_codes)}")
     
     # 確認
-    confirm = input("\n続行しますか？ (y/N): ").strip().lower()
+    try:
+        confirm = input("\n続行しますか？ (y/N): ").strip().lower()
+    except EOFError:
+        confirm = 'n'
+    
     if confirm not in ['y', 'yes']:
         print("キャンセルしました")
+        input("\nEnterキーで終了...")
         sys.exit(0)
     
     # スクリーニングシートを更新
-    update_screening_sheet(filepath, stock_codes)
+    try:
+        update_screening_sheet(filepath, stock_codes)
+    except Exception as e:
+        print(f"\n❌ エラーが発生しました: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    
+    # 終了前に待機
+    input("\nEnterキーで終了...")
 
 if __name__ == "__main__":
     main()

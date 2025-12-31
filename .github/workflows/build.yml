@@ -32,13 +32,3 @@ jobs:
       with:
         name: screening-tool-windows
         path: dist/ScreeningTool.exe
-    
-    - name: Create Release
-      if: github.ref == 'refs/heads/main'
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v1.0.0
-        name: Screening Tool v1.0.0
-        files: dist/ScreeningTool.exe
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
