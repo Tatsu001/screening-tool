@@ -95,10 +95,28 @@ def get_stock_data(ticker_code):
         stock = yf.Ticker(ticker)
         info = stock.info
         
+        # 自己資本比率を計算
+        equity_ratio = None
+        if info.get('totalStockholderEquity') and info.get('totalAssets'):
+            total_equity = info.get('totalStockholderEquity')
+            total_assets = info.get('totalAssets')
+            if total_assets > 0:
+                equity_ratio = (total_equity / total_assets) * 100
+        
+        # 売買代金を計算（億円単位）
+        trading_value = None
+        if info.get('averageVolume') and info.get('currentPrice'):
+            avg_volume = info.get('averageVolume')
+            current_price = info.get('currentPrice')
+            # 出来高 × 株価 ÷ 100,000,000 = 億円
+            trading_value = (avg_volume * current_price) / 100000000
+        
         # データを辞書形式で返す
         data = {
             'name': info.get('longName', info.get('shortName', '')),
             'market_cap': info.get('marketCap', None),
+            'equity_ratio': equity_ratio,  # 自己資本比率（%）
+            'trading_value': trading_value,  # 売買代金（億円）
             'trailing_pe': info.get('trailingPE', None),
             'price_to_book': info.get('priceToBook', None),
             'return_on_equity': info.get('returnOnEquity', None),
@@ -189,12 +207,12 @@ def update_screening_sheet(filepath, stock_codes):
     print(f"\n📡 株価データを取得中...")
     print("=" * 60)
     
-    # データ開始行
+    # データ開始行（6行目から）
     start_row = 6
     current_row = start_row
     
     # 既存データをクリア（6行目以降）
-    for row in range(start_row, 21):
+    for row in range(6, 21):
         for col in range(1, 25):
             cell = ws.cell(row=row, column=col)
             cell.value = None
@@ -219,6 +237,8 @@ def update_screening_sheet(filepath, stock_codes):
         
         if data is None:
             print("スキップ")
+            # データ取得失敗でも行は進める
+            current_row += 1
             continue
         
         print("✓")
@@ -252,12 +272,18 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'D{row}'].alignment = center_align
         ws[f'D{row}'].border = thin_border
         
-        # E列: 自己資本比率（空欄 - 手動入力）
+        # E列: 自己資本比率
+        if data['equity_ratio']:
+            ws[f'E{row}'] = data['equity_ratio']
+            ws[f'E{row}'].number_format = '0.0'
         ws[f'E{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'E{row}'].alignment = center_align
         ws[f'E{row}'].border = thin_border
         
-        # F列: 売買代金（空欄 - 手動入力）
+        # F列: 売買代金
+        if data['trading_value']:
+            ws[f'F{row}'] = data['trading_value']
+            ws[f'F{row}'].number_format = '#,##0'
         ws[f'F{row}'].fill = alert_fill if is_portfolio_stock else input_fill
         ws[f'F{row}'].alignment = center_align
         ws[f'F{row}'].border = thin_border
