@@ -3,7 +3,7 @@
 
 """
 投資管理テンプレート - スクリーニングシート自動更新ツール
-Version: 3.3.0
+Version: 3.4.0
 """
 
 import yfinance as yf
@@ -23,87 +23,7 @@ except ImportError:
     GUI_AVAILABLE = False
 
 # 色の定義
-INPUT_COLOR = 'FFFF00'  # 黄色（入力セル用）- 使用しない
 PORTFOLIO_ALERT_COLOR = 'FFA500'  # オレンジ色（ポートフォリオアラート用）
-
-# グロース市場の銘柄リスト（主要銘柄を拡充）
-GROWTH_MARKET_CODES = {
-    # IT・インターネット
-    '4478', '4755', '4477', '4481', '4486', '4488', '3681', '3696',
-    '4385', '4386', '4431', '4433', '4434', '4435', '4436', '4479',
-    '4368', '4371', '4374', '4375', '4376', '4378', '4382', '4384',
-    '3923', '3924', '3928', '3694', '3695', '3688', '3689', '3692',
-    '4425', '4428', '4429', '4430', '4432', '4437', '4438', '4439',
-    
-    # サービス・コンサル
-    '7047', '7048', '7049', '6070', '6098', '6177', '6178', '6180',
-    '2158', '2326', '2379', '2427', '2428', '6029', '6058', '6062',
-    '4591', '4592', '4593', '4594', '4595', '4596', '4597', '4598',
-    
-    # バイオ・医薬
-    '4571', '4572', '4573', '4574', '4575', '4576', '4577', '4578',
-    '4579', '4580', '4581', '4582', '4583', '4584', '4585', '4586',
-    
-    # その他成長企業
-    '3053', '3054', '3055', '3056', '3057', '3058', '3059', '3060',
-    '7032', '7033', '7034', '7035', '7036', '7037', '7038', '7039',
-    '9263', '9264', '9265', '9266', '9267', '9268', '9269', '9270',
-}
-
-# スタンダード市場の銘柄リスト（代表的な銘柄）
-STANDARD_MARKET_CODES = {
-    '1515', '1518', '1719', '1720', '1721', '1766', '1770', '1780',
-    '5401', '5410', '5411', '5444', '5445', '5449', '5451', '5471',
-}
-
-def get_market_category(info, ticker_code):
-    """
-    市場区分を取得
-    
-    Args:
-        info: yfinanceのinfo辞書
-        ticker_code: 銘柄コード（4桁）
-    
-    Returns:
-        str: プライム/スタンダード/グロース
-    """
-    # まず銘柄コードから判定（最も確実）
-    if ticker_code in GROWTH_MARKET_CODES:
-        return 'グロース'
-    
-    if ticker_code in STANDARD_MARKET_CODES:
-        return 'スタンダード'
-    
-    # yfinanceのデータから判定を試みる（改善版）
-    exchange = str(info.get('exchange', '')).upper()
-    quote_type = str(info.get('quoteType', '')).upper()
-    long_name = str(info.get('longName', '')).lower()
-    short_name = str(info.get('shortName', '')).lower()
-    
-    # グロース市場のキーワード判定（拡充）
-    growth_keywords = [
-        'growth', 'mothers', 'jasdaq growth', 
-        'グロース', 'マザーズ', 'ジャスダックグロース'
-    ]
-    
-    for keyword in growth_keywords:
-        if keyword in long_name or keyword in short_name:
-            return 'グロース'
-    
-    # exchangeフィールドから判定
-    if 'TYO' in exchange or 'JPX' in exchange:
-        # 市場情報がある場合
-        if 'market' in info:
-            market_info = str(info.get('market', '')).lower()
-            if 'growth' in market_info or 'mothers' in market_info:
-                return 'グロース'
-            elif 'standard' in market_info:
-                return 'スタンダード'
-            elif 'prime' in market_info:
-                return 'プライム'
-    
-    # デフォルトはプライム（主要企業は大抵プライム）
-    return 'プライム'
 
 def get_stock_data(ticker_code):
     """
@@ -120,9 +40,6 @@ def get_stock_data(ticker_code):
         ticker = f"{ticker_code}.T"
         stock = yf.Ticker(ticker)
         info = stock.info
-        
-        # 市場区分を取得（銘柄コードを渡す）
-        market = get_market_category(info, ticker_code)
         
         # 基本情報
         name = info.get('longName', info.get('shortName', '-'))
@@ -159,7 +76,6 @@ def get_stock_data(ticker_code):
         
         return {
             'name': name,
-            'market': market,
             'market_cap': market_cap,
             'equity_ratio': equity_ratio,
             'trading_value': trading_value,
@@ -200,21 +116,21 @@ def format_value(value, format_type='number', decimals=1):
     except:
         return '-'
 
-def get_screening_stocks(wb):
+def get_stocks_from_sheet(wb, sheet_name):
     """
-    スクリーニング銘柄シートから銘柄コードリストを取得
+    指定したシートから銘柄コードリストを取得
     
     Args:
         wb: openpyxlのワークブック
+        sheet_name: シート名
     
     Returns:
         list: 銘柄コードのリスト
     """
-    if 'スクリーニング銘柄' not in wb.sheetnames:
-        print("❌ エラー: 'スクリーニング銘柄'シートが見つかりません")
+    if sheet_name not in wb.sheetnames:
         return []
     
-    ws = wb['スクリーニング銘柄']
+    ws = wb[sheet_name]
     stock_codes = []
     
     # A列の2行目以降から銘柄コードを取得
@@ -252,13 +168,14 @@ def get_portfolio_stocks(wb):
     
     return stock_codes
 
-def update_screening_sheet(filepath, stock_codes):
+def update_screening_sheet(filepath, stock_codes, market_map):
     """
     スクリーニングシートを更新
     
     Args:
         filepath: Excelファイルパス
         stock_codes: 更新する銘柄コードのリスト
+        market_map: 銘柄コードと市場区分のマッピング辞書
     """
     print(f"\n📊 ファイルを読み込み中: {filepath}")
     
@@ -380,6 +297,11 @@ def update_screening_sheet(filepath, stock_codes):
         
         print("✓")
         
+        # 市場区分を取得（market_mapから）
+        market = market_map.get(code, '')
+        if market:
+            print(f"  市場区分: {market}")
+        
         # 新規銘柄の場合、テンプレート行から書式・入力規則をコピー
         is_new_stock = code not in existing_data
         if is_new_stock:
@@ -422,8 +344,8 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'B{row}'].alignment = center_align
         ws[f'B{row}'].border = thin_border
         
-        # C列: 市場区分
-        ws[f'C{row}'] = data.get('market', 'プライム')
+        # C列: 市場区分（market_mapから取得、空欄の場合もあり）
+        ws[f'C{row}'] = market
         if is_portfolio_alert:
             ws[f'C{row}'].fill = alert_fill
         ws[f'C{row}'].alignment = center_align
@@ -481,7 +403,7 @@ def update_screening_sheet(filepath, stock_codes):
         
         # I列: バリュースコア（数式 - 触らない）
         
-        # J列: 売上成長率（自動取得）✨
+        # J列: 売上成長率（自動取得）
         revenue_growth = format_value(data['revenue_growth'], 'percent', 1)
         ws[f'J{row}'] = revenue_growth
         if revenue_growth != '-':
@@ -491,7 +413,7 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'J{row}'].alignment = center_align
         ws[f'J{row}'].border = thin_border
         
-        # K列: ROE（自動取得）✨
+        # K列: ROE（自動取得）
         roe = format_value(data['return_on_equity'], 'percent', 1)
         ws[f'K{row}'] = roe
         if roe != '-':
@@ -650,22 +572,82 @@ def main():
         input("\nEnterキーで終了...")
         sys.exit(1)
     
-    # スクリーニング銘柄シートから銘柄コードを取得
-    stock_codes = get_screening_stocks(wb)
+    # 各シートから銘柄コードを取得
+    growth_stocks = get_stocks_from_sheet(wb, '銘柄スクリーニング（グロース）')
+    prime_stocks = get_stocks_from_sheet(wb, '銘柄スクリーニング（プライム）')
+    other_stocks = get_stocks_from_sheet(wb, 'スクリーニング銘柄')
+    
     wb.close()
     
+    # 市場区分のマッピングを作成
+    market_map = {}
+    
+    # グロースシートの銘柄
+    for code in growth_stocks:
+        market_map[code] = 'グロース'
+    
+    # プライムシートの銘柄（重複チェック）
+    for code in prime_stocks:
+        if code in market_map:
+            # 重複の場合は空欄
+            market_map[code] = ''
+        else:
+            market_map[code] = 'プライム'
+    
+    # スクリーニング銘柄シートの銘柄（重複チェック）
+    for code in other_stocks:
+        if code in market_map:
+            # 重複の場合は空欄
+            market_map[code] = ''
+        else:
+            market_map[code] = ''  # 元々空欄
+    
+    # 統合リスト作成
+    all_stocks = set(growth_stocks + prime_stocks + other_stocks)
+    stock_codes = list(all_stocks)
+    
     if not stock_codes:
-        print("\n❌ エラー: 'スクリーニング銘柄'シートに銘柄コードが入力されていません")
+        print("\n❌ エラー: 銘柄コードが入力されていません")
         print("\n手順:")
         print("1. Excelファイルを開く")
-        print("2. 'スクリーニング銘柄'シートのA列（2行目以降）に銘柄コードを入力")
+        print("2. 以下のいずれかのシートのA列（2行目以降）に銘柄コードを入力")
+        print("   - 銘柄スクリーニング（グロース）")
+        print("   - 銘柄スクリーニング（プライム）")
+        print("   - スクリーニング銘柄")
         print("3. 保存してから再実行")
         input("\nEnterキーで終了...")
         sys.exit(1)
     
+    # 情報表示
+    print(f"\n📊 読み込んだ銘柄:")
+    print(f"   銘柄スクリーニング（グロース）: {len(growth_stocks)}銘柄")
+    if growth_stocks:
+        print(f"     {', '.join(growth_stocks)}")
+    
+    print(f"   銘柄スクリーニング（プライム）: {len(prime_stocks)}銘柄")
+    if prime_stocks:
+        print(f"     {', '.join(prime_stocks)}")
+    
+    print(f"   スクリーニング銘柄: {len(other_stocks)}銘柄")
+    if other_stocks:
+        print(f"     {', '.join(other_stocks)}")
+    
+    # 重複チェック
+    duplicates = []
+    checked = set()
+    for code in growth_stocks + prime_stocks + other_stocks:
+        if code in checked:
+            if code not in duplicates:
+                duplicates.append(code)
+        else:
+            checked.add(code)
+    
+    if duplicates:
+        print(f"\n⚠️  重複銘柄（市場区分: 空欄）:")
+        print(f"     {', '.join(duplicates)}")
+    
     # 確認
-    print(f"\n✅ {len(stock_codes)}銘柄を更新します")
-    print(f"   {', '.join(stock_codes)}")
+    print(f"\n✅ 合計 {len(stock_codes)}銘柄を更新します")
     print()
     
     try:
@@ -679,7 +661,7 @@ def main():
         sys.exit(0)
     
     # スクリーニングシートを更新
-    update_screening_sheet(filepath, stock_codes)
+    update_screening_sheet(filepath, stock_codes, market_map)
     
     # 終了
     input("\nEnterキーで終了...")
