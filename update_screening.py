@@ -227,6 +227,34 @@ def format_value(value, format_type='number', decimals=1):
     except:
         return '-'
 
+def get_screening_stocks(wb):
+    """
+    スクリーニング銘柄シートから銘柄コードリストを取得
+    
+    Args:
+        wb: openpyxlのワークブック
+    
+    Returns:
+        list: 銘柄コードのリスト
+    """
+    if 'スクリーニング銘柄' not in wb.sheetnames:
+        print("❌ エラー: 'スクリーニング銘柄'シートが見つかりません")
+        return []
+    
+    ws = wb['スクリーニング銘柄']
+    stock_codes = []
+    
+    # A列の2行目以降から銘柄コードを取得
+    for row in range(2, 100):  # 最大98銘柄
+        code = ws[f'A{row}'].value
+        if code and str(code).strip():
+            stock_codes.append(str(code).strip())
+        elif not code:
+            # 空欄が出たら終了
+            break
+    
+    return stock_codes
+
 def get_portfolio_stocks(wb):
     """
     ポートフォリオシートから保有銘柄のコードリストを取得
@@ -283,6 +311,9 @@ def update_screening_sheet(filepath, stock_codes):
     if portfolio_stocks:
         print(f"   {', '.join(sorted(portfolio_stocks))}")
     
+    # スクリーニング銘柄リストを取得（オレンジ色判定用）
+    screening_codes_set = set(stock_codes)
+    
     # スタイル定義
     input_fill = PatternFill(start_color=INPUT_COLOR, end_color=INPUT_COLOR, fill_type='solid')
     alert_fill = PatternFill(start_color=PORTFOLIO_ALERT_COLOR, end_color=PORTFOLIO_ALERT_COLOR, fill_type='solid')
@@ -301,11 +332,13 @@ def update_screening_sheet(filepath, stock_codes):
     start_row = 6
     current_row = start_row
     
-    # 既存データをクリア（6行目以降）
+    # 既存データをクリア（6行目以降）＋色をデフォルトに戻す
     for row in range(6, 21):
         for col in range(1, 25):
             cell = ws.cell(row=row, column=col)
             cell.value = None
+            # 背景色をクリア（デフォルトに戻す）
+            cell.fill = openpyxl.styles.PatternFill(fill_type=None)
     
     # 各銘柄のデータを取得して書き込み
     portfolio_alerts = []
@@ -315,10 +348,10 @@ def update_screening_sheet(filepath, stock_codes):
         
         print(f"\n[{idx}/{len(stock_codes)}] {code}")
         
-        # ポートフォリオ保有銘柄かチェック
-        is_portfolio_stock = code in portfolio_stocks
+        # ポートフォリオ保有銘柄で、かつスクリーニング銘柄リストにない場合にアラート
+        is_portfolio_stock = code in portfolio_stocks and code not in screening_codes_set
         if is_portfolio_stock:
-            print(f"  ⚠️  ポートフォリオ保有中")
+            print(f"  ⚠️  ポートフォリオ保有中（スクリーニング対象外）")
             portfolio_alerts.append(code)
         
         # yfinanceでデータ取得
@@ -496,197 +529,6 @@ def update_screening_sheet(filepath, stock_codes):
     
     print("\n✅ スクリーニングシート更新完了!")
 
-def get_screening_criteria():
-    """
-    スクリーニング条件を取得
-    
-    Returns:
-        dict: スクリーニング条件
-    """
-    print("\n" + "=" * 60)
-    print("📊 スクリーニング条件の設定")
-    print("=" * 60)
-    print("\nスクリーニング条件を入力してください（空Enterでデフォルト値）")
-    print()
-    
-    criteria = {}
-    
-    # 時価総額
-    print("【時価総額】")
-    try:
-        min_cap = input("  最小時価総額（億円）[デフォルト: 100]: ").strip()
-        criteria['min_market_cap'] = float(min_cap) * 100000000 if min_cap else 10000000000
-    except:
-        criteria['min_market_cap'] = 10000000000  # 100億円
-    
-    # PER
-    print("\n【PER（株価収益率）】")
-    try:
-        min_per = input("  最小PER [デフォルト: なし]: ").strip()
-        criteria['min_per'] = float(min_per) if min_per else None
-        max_per = input("  最大PER [デフォルト: なし]: ").strip()
-        criteria['max_per'] = float(max_per) if max_per else None
-    except:
-        criteria['min_per'] = None
-        criteria['max_per'] = None
-    
-    # PBR
-    print("\n【PBR（株価純資産倍率）】")
-    try:
-        min_pbr = input("  最小PBR [デフォルト: なし]: ").strip()
-        criteria['min_pbr'] = float(min_pbr) if min_pbr else None
-        max_pbr = input("  最大PBR [デフォルト: なし]: ").strip()
-        criteria['max_pbr'] = float(max_pbr) if max_pbr else None
-    except:
-        criteria['min_pbr'] = None
-        criteria['max_pbr'] = None
-    
-    # ROE
-    print("\n【ROE（自己資本利益率）】")
-    try:
-        min_roe = input("  最小ROE（%）[デフォルト: なし]: ").strip()
-        criteria['min_roe'] = float(min_roe) if min_roe else None
-    except:
-        criteria['min_roe'] = None
-    
-    # 自己資本比率
-    print("\n【自己資本比率】")
-    try:
-        min_equity = input("  最小自己資本比率（%）[デフォルト: なし]: ").strip()
-        criteria['min_equity_ratio'] = float(min_equity) if min_equity else None
-    except:
-        criteria['min_equity_ratio'] = None
-    
-    # 売買代金
-    print("\n【売買代金】")
-    try:
-        min_value = input("  最小売買代金（億円）[デフォルト: なし]: ").strip()
-        criteria['min_trading_value'] = float(min_value) if min_value else None
-    except:
-        criteria['min_trading_value'] = None
-    
-    return criteria
-
-def check_screening_criteria(data, criteria):
-    """
-    銘柄がスクリーニング条件を満たすかチェック
-    
-    Args:
-        data: 銘柄データ
-        criteria: スクリーニング条件
-    
-    Returns:
-        bool: 条件を満たす場合True
-    """
-    # 時価総額（必須条件）
-    if data['market_cap'] is None or data['market_cap'] < criteria['min_market_cap']:
-        return False
-    
-    # PER（最小値）
-    if criteria['min_per'] is not None:
-        if data['trailing_pe'] is None or data['trailing_pe'] < criteria['min_per']:
-            return False
-    
-    # PER（最大値）
-    if criteria['max_per'] is not None:
-        if data['trailing_pe'] is None or data['trailing_pe'] > criteria['max_per']:
-            return False
-    
-    # PBR（最小値）
-    if criteria['min_pbr'] is not None:
-        if data['price_to_book'] is None or data['price_to_book'] < criteria['min_pbr']:
-            return False
-    
-    # PBR（最大値）
-    if criteria['max_pbr'] is not None:
-        if data['price_to_book'] is None or data['price_to_book'] > criteria['max_pbr']:
-            return False
-    
-    # ROE
-    if criteria['min_roe'] is not None:
-        if data['return_on_equity'] is None or data['return_on_equity'] < criteria['min_roe']:
-            return False
-    
-    # 自己資本比率
-    if criteria['min_equity_ratio'] is not None:
-        if data['equity_ratio'] is None or data['equity_ratio'] < criteria['min_equity_ratio']:
-            return False
-    
-    # 売買代金
-    if criteria['min_trading_value'] is not None:
-        if data['trading_value'] is None or data['trading_value'] < criteria['min_trading_value']:
-            return False
-    
-    return True
-
-def auto_screening(max_stocks=15):
-    """
-    自動スクリーニング：条件に合う銘柄を検索
-    
-    Args:
-        max_stocks: 最大取得銘柄数
-    
-    Returns:
-        list: 条件に合う銘柄コードのリスト
-    """
-    print("\n🔍 自動スクリーニングを開始します...")
-    print("=" * 60)
-    
-    # 日本の主要銘柄リスト（例）
-    # 実際にはもっと多くの銘柄を対象にできます
-    candidate_codes = [
-        # プライム市場の主要銘柄
-        '7203', '6758', '6920', '4063', '8035', '9984', '6861', '6501',
-        '7974', '4502', '4503', '8306', '8316', '7751', '6971', '6702',
-        '4519', '4568', '6954', '6981', '4324', '9433', '2914', '4911',
-        '6367', '7267', '4452', '4523', '6178', '3382', '4704', '9697',
-        '6098', '2801', '8058', '8031', '3861', '4661', '6952', '7269',
-        '6976', '6645', '4188', '4901', '7733', '6273', '6479', '7832',
-        '4543', '6503', '7201', '7270', '9020', '9021', '4755', '6273'
-    ]
-    
-    matched_stocks = []
-    criteria = get_screening_criteria()
-    
-    print("\n" + "=" * 60)
-    print("🔍 スクリーニング実行中...")
-    print("=" * 60)
-    print(f"対象銘柄数: {len(candidate_codes)}銘柄")
-    print(f"最大取得数: {max_stocks}銘柄")
-    print()
-    
-    for idx, code in enumerate(candidate_codes, 1):
-        if len(matched_stocks) >= max_stocks:
-            break
-        
-        print(f"[{idx}/{len(candidate_codes)}] {code} チェック中...", end=" ")
-        
-        data = get_stock_data(code)
-        
-        if data is None:
-            print("データ取得失敗")
-            continue
-        
-        if check_screening_criteria(data, criteria):
-            print("✓ 条件合致！")
-            matched_stocks.append(code)
-        else:
-            print("×")
-        
-        # API制限を避けるため待機
-        time.sleep(0.3)
-    
-    print("\n" + "=" * 60)
-    print(f"✅ スクリーニング完了: {len(matched_stocks)}銘柄が条件に合致")
-    print("=" * 60)
-    
-    if matched_stocks:
-        print("\n【合致した銘柄】")
-        for code in matched_stocks:
-            print(f"  - {code}")
-    
-    return matched_stocks
-
 def main():
     """メイン処理"""
     print("=" * 60)
@@ -766,61 +608,26 @@ def main():
         input("\nEnterキーで終了...")
         sys.exit(1)
     
-    # スクリーニング方法の選択
-    print("\n" + "=" * 60)
-    print("📝 銘柄の選択方法")
-    print("=" * 60)
-    print("1. 自動スクリーニング（条件に合う銘柄を自動検索）")
-    print("2. 手動入力（銘柄コードを直接入力）")
-    print()
-    
-    stock_codes = []
+    # Excelファイルを開いて銘柄リストを取得
+    print(f"\n📊 ファイルを読み込み中: {filepath}")
     
     try:
-        choice = input("選択してください (1/2) [デフォルト: 1]: ").strip()
-    except EOFError:
-        choice = '1'
+        wb = openpyxl.load_workbook(filepath)
+    except Exception as e:
+        print(f"❌ エラー: ファイルの読み込みに失敗 - {str(e)}")
+        input("\nEnterキーで終了...")
+        sys.exit(1)
     
-    if not choice:
-        choice = '1'
+    # スクリーニング銘柄シートから銘柄コードを取得
+    stock_codes = get_screening_stocks(wb)
+    wb.close()
     
-    if choice == '1':
-        # 自動スクリーニング
-        stock_codes = auto_screening(max_stocks=15)
-        
-        if not stock_codes:
-            print("\n❌ 条件に合う銘柄が見つかりませんでした")
-            print("条件を緩めるか、手動入力を試してください")
-            input("\nEnterキーで終了...")
-            sys.exit(1)
-    
-    elif choice == '2':
-        # 手動入力
-        print("\n📝 更新する銘柄コードを入力してください")
-        print("   （複数の場合はカンマ区切り、例: 7203,6758,6920）")
-        print("   空Enter で入力終了")
-        print()
-        
-        while True:
-            try:
-                user_input = input("銘柄コード: ").strip()
-            except EOFError:
-                break
-            
-            if not user_input:
-                break
-            
-            # カンマ区切りで分割
-            codes = [code.strip() for code in user_input.split(',')]
-            stock_codes.extend(codes)
-        
-        if not stock_codes:
-            print("❌ エラー: 銘柄コードが入力されていません")
-            input("\nEnterキーで終了...")
-            sys.exit(1)
-    
-    else:
-        print("❌ エラー: 無効な選択です")
+    if not stock_codes:
+        print("\n❌ エラー: 'スクリーニング銘柄'シートに銘柄コードが入力されていません")
+        print("\n手順:")
+        print("1. Excelファイルを開く")
+        print("2. 'スクリーニング銘柄'シートのA列（2行目以降）に銘柄コードを入力")
+        print("3. 保存してから再実行")
         input("\nEnterキーで終了...")
         sys.exit(1)
     
