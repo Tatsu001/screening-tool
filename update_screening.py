@@ -311,8 +311,40 @@ def update_screening_sheet(filepath, stock_codes):
     if portfolio_stocks:
         print(f"   {', '.join(sorted(portfolio_stocks))}")
     
-    # スクリーニング銘柄リストを取得（オレンジ色判定用）
-    screening_codes_set = set(stock_codes)
+    # 前回のスクリーニングシートから既存銘柄とI列以降のデータを保存
+    print(f"\n📋 既存データを読み込み中...")
+    existing_data = {}  # {銘柄コード: {row_data: I列以降のデータ}}
+    
+    for row in range(6, 21):  # 6～20行目
+        code = ws[f'A{row}'].value
+        if code and str(code).strip():
+            code = str(code).strip()
+            # I列以降（9列目以降）のデータを保存
+            row_data = {}
+            for col in range(9, 25):  # I列(9)～X列(24)
+                cell = ws.cell(row=row, column=col)
+                row_data[col] = {
+                    'value': cell.value,
+                    'fill': cell.fill.copy() if cell.fill else None,
+                    'font': cell.font.copy() if cell.font else None,
+                    'alignment': cell.alignment.copy() if cell.alignment else None,
+                    'border': cell.border.copy() if cell.border else None,
+                    'number_format': cell.number_format
+                }
+            existing_data[code] = row_data
+            print(f"   {code}: I列以降のデータを保存")
+    
+    # 統合リストを作成
+    # 1. 今回のスクリーニング銘柄リスト
+    # 2. ポートフォリオにあるが今回のリストにない銘柄
+    stock_codes_set = set(stock_codes)
+    portfolio_only = portfolio_stocks - stock_codes_set
+    
+    unified_list = list(stock_codes) + list(portfolio_only)
+    
+    print(f"\n📊 統合リスト: {len(unified_list)}銘柄")
+    print(f"   スクリーニング銘柄: {len(stock_codes)}銘柄")
+    print(f"   ポートフォリオのみ: {len(portfolio_only)}銘柄")
     
     # スタイル定義
     input_fill = PatternFill(start_color=INPUT_COLOR, end_color=INPUT_COLOR, fill_type='solid')
@@ -325,32 +357,30 @@ def update_screening_sheet(filepath, stock_codes):
     )
     center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
     
+    # A～H列のみクリア（I列以降は触らない）
+    print(f"\n🧹 A～H列をクリア中...")
+    for row in range(6, 21):
+        for col in range(1, 9):  # A列(1)～H列(8)
+            cell = ws.cell(row=row, column=col)
+            cell.value = None
+            cell.fill = openpyxl.styles.PatternFill(fill_type=None)
+    
     print(f"\n📡 株価データを取得中...")
     print("=" * 60)
     
-    # データ開始行（6行目から）
-    start_row = 6
-    current_row = start_row
-    
-    # 既存データをクリア（6行目以降）＋色をデフォルトに戻す
-    for row in range(6, 21):
-        for col in range(1, 25):
-            cell = ws.cell(row=row, column=col)
-            cell.value = None
-            # 背景色をクリア（デフォルトに戻す）
-            cell.fill = openpyxl.styles.PatternFill(fill_type=None)
-    
-    # 各銘柄のデータを取得して書き込み
+    # データ開始行
+    current_row = 6
     portfolio_alerts = []
     
-    for idx, code in enumerate(stock_codes, start=1):
+    # 統合リストの各銘柄を処理
+    for idx, code in enumerate(unified_list, start=1):
         code = str(code).strip()
         
-        print(f"\n[{idx}/{len(stock_codes)}] {code}")
+        print(f"\n[{idx}/{len(unified_list)}] {code}")
         
-        # ポートフォリオ保有銘柄で、かつスクリーニング銘柄リストにない場合にアラート
-        is_portfolio_stock = code in portfolio_stocks and code not in screening_codes_set
-        if is_portfolio_stock:
+        # ポートフォリオにあるが今回のリストにない = オレンジ色
+        is_portfolio_alert = code in portfolio_only
+        if is_portfolio_alert:
             print(f"  ⚠️  ポートフォリオ保有中（スクリーニング対象外）")
             portfolio_alerts.append(code)
         
@@ -366,25 +396,25 @@ def update_screening_sheet(filepath, stock_codes):
         
         print("✓")
         
-        # データを書き込み
+        # A～H列のみ書き込み
         row = current_row
         
         # A列: 銘柄コード
         ws[f'A{row}'] = code
-        ws[f'A{row}'].fill = alert_fill if is_portfolio_stock else input_fill
+        ws[f'A{row}'].fill = alert_fill if is_portfolio_alert else input_fill
         ws[f'A{row}'].alignment = center_align
         ws[f'A{row}'].border = thin_border
         
         # B列: 銘柄名
         name = data['name'] if data['name'] and data['name'] != '-' else '-'
         ws[f'B{row}'] = name
-        ws[f'B{row}'].fill = alert_fill if is_portfolio_stock else input_fill
+        ws[f'B{row}'].fill = alert_fill if is_portfolio_alert else input_fill
         ws[f'B{row}'].alignment = center_align
         ws[f'B{row}'].border = thin_border
         
         # C列: 市場区分
         ws[f'C{row}'] = data.get('market', 'プライム')
-        ws[f'C{row}'].fill = alert_fill if is_portfolio_stock else input_fill
+        ws[f'C{row}'].fill = alert_fill if is_portfolio_alert else input_fill
         ws[f'C{row}'].alignment = center_align
         ws[f'C{row}'].border = thin_border
         
@@ -393,7 +423,7 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'D{row}'] = market_cap
         if market_cap != '-':
             ws[f'D{row}'].number_format = '#,##0'
-        ws[f'D{row}'].fill = alert_fill if is_portfolio_stock else input_fill
+        ws[f'D{row}'].fill = alert_fill if is_portfolio_alert else input_fill
         ws[f'D{row}'].alignment = center_align
         ws[f'D{row}'].border = thin_border
         
@@ -402,7 +432,7 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'E{row}'] = equity_ratio
         if equity_ratio != '-':
             ws[f'E{row}'].number_format = '0.0'
-        ws[f'E{row}'].fill = alert_fill if is_portfolio_stock else input_fill
+        ws[f'E{row}'].fill = alert_fill if is_portfolio_alert else input_fill
         ws[f'E{row}'].alignment = center_align
         ws[f'E{row}'].border = thin_border
         
@@ -411,7 +441,7 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'F{row}'] = trading_value
         if trading_value != '-':
             ws[f'F{row}'].number_format = '#,##0'
-        ws[f'F{row}'].fill = alert_fill if is_portfolio_stock else input_fill
+        ws[f'F{row}'].fill = alert_fill if is_portfolio_alert else input_fill
         ws[f'F{row}'].alignment = center_align
         ws[f'F{row}'].border = thin_border
         
@@ -420,7 +450,7 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'G{row}'] = per
         if per != '-':
             ws[f'G{row}'].number_format = '0.0'
-        ws[f'G{row}'].fill = alert_fill if is_portfolio_stock else input_fill
+        ws[f'G{row}'].fill = alert_fill if is_portfolio_alert else input_fill
         ws[f'G{row}'].alignment = center_align
         ws[f'G{row}'].border = thin_border
         
@@ -429,74 +459,26 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'H{row}'] = pbr
         if pbr != '-':
             ws[f'H{row}'].number_format = '0.0'
-        ws[f'H{row}'].fill = alert_fill if is_portfolio_stock else input_fill
+        ws[f'H{row}'].fill = alert_fill if is_portfolio_alert else input_fill
         ws[f'H{row}'].alignment = center_align
         ws[f'H{row}'].border = thin_border
         
-        # I列: バリュースコア（数式）
-        ws[f'I{row}'] = f'=IF(OR(A{row}="",G{row}="",H{row}=""),"",IF(AND(G{row}>=5,G{row}<=10,H{row}>=0.5,H{row}<=0.75),20,IF(AND(G{row}>=5,G{row}<=10,H{row}>0.75,H{row}<=1),18,IF(AND(G{row}>10,G{row}<=15,H{row}>=0.5,H{row}<=0.75),18,IF(AND(G{row}>10,G{row}<=15,H{row}>0.75,H{row}<=1),15,10)))))'
-        ws[f'I{row}'].alignment = center_align
-        ws[f'I{row}'].border = thin_border
-        
-        # J列: 売上成長率
-        revenue_growth = format_value(data['revenue_growth'], 'percent', 1)
-        ws[f'J{row}'] = revenue_growth
-        if revenue_growth != '-':
-            ws[f'J{row}'].number_format = '0.0'
-        ws[f'J{row}'].fill = alert_fill if is_portfolio_stock else input_fill
-        ws[f'J{row}'].alignment = center_align
-        ws[f'J{row}'].border = thin_border
-        
-        # K列: ROE
-        roe = format_value(data['return_on_equity'], 'percent', 1)
-        ws[f'K{row}'] = roe
-        if roe != '-':
-            ws[f'K{row}'].number_format = '0.0'
-        ws[f'K{row}'].fill = alert_fill if is_portfolio_stock else input_fill
-        ws[f'K{row}'].alignment = center_align
-        ws[f'K{row}'].border = thin_border
-        
-        # L列: 成長性スコア（数式）
-        ws[f'L{row}'] = f'=IF(OR(A{row}="",C{row}="",J{row}=""),"",IF(C{row}="グロース",IF(J{row}>=30,20,IF(J{row}>=20,18,IF(J{row}>=15,15,IF(J{row}>=10,12,10)))),IF(AND(J{row}>=20,K{row}>=15),20,IF(AND(J{row}>=15,K{row}>=12),18,IF(AND(J{row}>=10,K{row}>=10),15,10)))))'
-        ws[f'L{row}'].alignment = center_align
-        ws[f'L{row}'].border = thin_border
-        
-        # M-R列: チェックリスト（空欄 - 手動入力）
-        for col in range(13, 19):
-            ws.cell(row=row, column=col).fill = alert_fill if is_portfolio_stock else input_fill
-            ws.cell(row=row, column=col).alignment = center_align
-            ws.cell(row=row, column=col).border = thin_border
-        
-        # S列: 事業性スコア（数式）
-        ws[f'S{row}'] = f'=IF(A{row}="","",IF(M{row}="〇",3,IF(M{row}="△",1.5,0))+IF(N{row}="〇",4,IF(N{row}="△",2,0))+IF(O{row}="〇",3,IF(O{row}="△",1.5,0))+IF(P{row}="〇",3,IF(P{row}="△",1.5,0))+IF(Q{row}="〇",4,IF(Q{row}="△",2,0))+IF(R{row}="〇",3,IF(R{row}="△",1.5,0)))'
-        ws[f'S{row}'].alignment = center_align
-        ws[f'S{row}'].border = thin_border
-        
-        # T列: トレンドスコア（空欄 - 手動入力）
-        ws[f'T{row}'].fill = alert_fill if is_portfolio_stock else input_fill
-        ws[f'T{row}'].alignment = center_align
-        ws[f'T{row}'].border = thin_border
-        
-        # U列: 総合スコア（数式）
-        ws[f'U{row}'] = f'=IF(A{row}="","",IF(I{row}="",0,I{row})+IF(L{row}="",0,L{row})+IF(S{row}="",0,S{row})+IF(T{row}="",0,T{row}))'
-        ws[f'U{row}'].alignment = center_align
-        ws[f'U{row}'].border = thin_border
-        
-        # V列: 投資検討（空欄 - 手動入力）
-        ws[f'V{row}'].fill = alert_fill if is_portfolio_stock else input_fill
-        ws[f'V{row}'].alignment = center_align
-        ws[f'V{row}'].border = thin_border
-        
-        # W列: 投資比率（数式）
-        ws[f'W{row}'] = f'=IF(OR(A{row}="",V{row}<>"〇"),"",U{row}/SUMIF($V$6:$V$20,"〇",$U$6:$U$20))'
-        ws[f'W{row}'].number_format = '0.0%'
-        ws[f'W{row}'].alignment = center_align
-        ws[f'W{row}'].border = thin_border
-        
-        # X列: メモ（空欄 - 手動入力）
-        ws[f'X{row}'].fill = alert_fill if is_portfolio_stock else input_fill
-        ws[f'X{row}'].alignment = Alignment(horizontal='left', vertical='center')
-        ws[f'X{row}'].border = thin_border
+        # I列以降: 既存データがあれば復元（数式・手動入力を保持）
+        if code in existing_data:
+            print(f"  📋 I列以降のデータを復元")
+            for col, cell_data in existing_data[code].items():
+                cell = ws.cell(row=row, column=col)
+                cell.value = cell_data['value']
+                if cell_data['fill']:
+                    cell.fill = cell_data['fill']
+                if cell_data['font']:
+                    cell.font = cell_data['font']
+                if cell_data['alignment']:
+                    cell.alignment = cell_data['alignment']
+                if cell_data['border']:
+                    cell.border = cell_data['border']
+                if cell_data['number_format']:
+                    cell.number_format = cell_data['number_format']
         
         current_row += 1
         
@@ -504,6 +486,33 @@ def update_screening_sheet(filepath, stock_codes):
         time.sleep(0.5)
     
     # ファイルを保存
+    print("\n" + "=" * 60)
+    print(f"💾 ファイルを保存中...")
+    
+    try:
+        wb.save(filepath)
+        print(f"✅ 保存完了: {filepath}")
+    except Exception as e:
+        print(f"❌ エラー: ファイルの保存に失敗 - {str(e)}")
+        sys.exit(1)
+    
+    # サマリー表示
+    print("\n" + "=" * 60)
+    print("📊 更新サマリー")
+    print("=" * 60)
+    print(f"更新銘柄数: {len(unified_list)}銘柄")
+    print(f"  - スクリーニング銘柄: {len(stock_codes)}銘柄")
+    print(f"  - ポートフォリオのみ: {len(portfolio_only)}銘柄")
+    
+    if portfolio_alerts:
+        print(f"\n⚠️  ポートフォリオ保有中（スクリーニング対象外）:")
+        for code in portfolio_alerts:
+            print(f"   - {code}")
+        print(f"\n注意: これらの銘柄は売却を検討してください。")
+    
+    print("\n✅ スクリーニングシート更新完了!")
+
+def main():
     print("\n" + "=" * 60)
     print(f"💾 ファイルを保存中...")
     
