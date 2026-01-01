@@ -329,22 +329,28 @@ def update_screening_sheet(filepath, stock_codes, market_map):
                 if template_cell.number_format:
                     target_cell.number_format = template_cell.number_format
         
-        # A～K列を書き込み（背景色なし）
+        # A～K列を書き込み（ポートフォリオアラート時はオレンジ背景）
         row = current_row
         
         # A列: 銘柄コード
         ws[f'A{row}'] = code
+        if is_portfolio_alert:
+            ws[f'A{row}'].fill = alert_fill
         ws[f'A{row}'].alignment = center_align
         ws[f'A{row}'].border = thin_border
         
         # B列: 銘柄名
         name = data['name'] if data['name'] and data['name'] != '-' else '-'
         ws[f'B{row}'] = name
+        if is_portfolio_alert:
+            ws[f'B{row}'].fill = alert_fill
         ws[f'B{row}'].alignment = center_align
         ws[f'B{row}'].border = thin_border
         
         # C列: 市場区分（market_mapから取得、空欄の場合もあり）
         ws[f'C{row}'] = market
+        if is_portfolio_alert:
+            ws[f'C{row}'].fill = alert_fill
         ws[f'C{row}'].alignment = center_align
         ws[f'C{row}'].border = thin_border
         
@@ -353,6 +359,8 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'D{row}'] = market_cap
         if market_cap != '-':
             ws[f'D{row}'].number_format = '#,##0'
+        if is_portfolio_alert:
+            ws[f'D{row}'].fill = alert_fill
         ws[f'D{row}'].alignment = center_align
         ws[f'D{row}'].border = thin_border
         
@@ -361,6 +369,8 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'E{row}'] = equity_ratio
         if equity_ratio != '-':
             ws[f'E{row}'].number_format = '0.0'
+        if is_portfolio_alert:
+            ws[f'E{row}'].fill = alert_fill
         ws[f'E{row}'].alignment = center_align
         ws[f'E{row}'].border = thin_border
         
@@ -369,6 +379,8 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'F{row}'] = trading_value
         if trading_value != '-':
             ws[f'F{row}'].number_format = '#,##0'
+        if is_portfolio_alert:
+            ws[f'F{row}'].fill = alert_fill
         ws[f'F{row}'].alignment = center_align
         ws[f'F{row}'].border = thin_border
         
@@ -377,6 +389,8 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'G{row}'] = per
         if per != '-':
             ws[f'G{row}'].number_format = '0.0'
+        if is_portfolio_alert:
+            ws[f'G{row}'].fill = alert_fill
         ws[f'G{row}'].alignment = center_align
         ws[f'G{row}'].border = thin_border
         
@@ -385,24 +399,30 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'H{row}'] = pbr
         if pbr != '-':
             ws[f'H{row}'].number_format = '0.0'
+        if is_portfolio_alert:
+            ws[f'H{row}'].fill = alert_fill
         ws[f'H{row}'].alignment = center_align
         ws[f'H{row}'].border = thin_border
         
         # I列: バリュースコア（数式 - 触らない）
         
-        # J列: 売上成長率（背景色なし）
+        # J列: 売上成長率（ポートフォリオアラート時はオレンジ背景）
         revenue_growth = format_value(data['revenue_growth'], 'percent', 1)
         ws[f'J{row}'] = revenue_growth
         if revenue_growth != '-':
             ws[f'J{row}'].number_format = '0.0'
+        if is_portfolio_alert:
+            ws[f'J{row}'].fill = alert_fill
         ws[f'J{row}'].alignment = center_align
         ws[f'J{row}'].border = thin_border
         
-        # K列: ROE（背景色なし）
+        # K列: ROE（ポートフォリオアラート時はオレンジ背景）
         roe = format_value(data['return_on_equity'], 'percent', 1)
         ws[f'K{row}'] = roe
         if roe != '-':
             ws[f'K{row}'].number_format = '0.0'
+        if is_portfolio_alert:
+            ws[f'K{row}'].fill = alert_fill
         ws[f'K{row}'].alignment = center_align
         ws[f'K{row}'].border = thin_border
         
