@@ -200,17 +200,19 @@ def update_screening_sheet(filepath, stock_codes, market_map):
     if portfolio_stocks:
         print(f"   {', '.join(sorted(portfolio_stocks))}")
     
-    # 前回のスクリーニングシートから既存銘柄とI列以降のデータを保存
+    # 前回のスクリーニングシートから既存銘柄のM～R, T, V, X列データを保存
     print(f"\n📋 既存データを読み込み中...")
-    existing_data = {}  # {銘柄コード: {row_data: I列以降のデータ}}
+    existing_data = {}  # {銘柄コード: {col: データ}}
+    
+    # 復元対象の列: M(13), N(14), O(15), P(16), Q(17), R(18), T(20), V(22), X(24)
+    restore_columns = [13, 14, 15, 16, 17, 18, 20, 22, 24]
     
     for row in range(6, 21):  # 6～20行目
         code = ws[f'A{row}'].value
         if code and str(code).strip():
             code = str(code).strip()
-            # I列以降（9列目以降）のデータを保存
             row_data = {}
-            for col in range(9, 25):  # I列(9)～X列(24)
+            for col in restore_columns:
                 cell = ws.cell(row=row, column=col)
                 row_data[col] = {
                     'value': cell.value,
@@ -221,7 +223,7 @@ def update_screening_sheet(filepath, stock_codes, market_map):
                     'number_format': cell.number_format,
                 }
             existing_data[code] = row_data
-            print(f"   {code}: I列以降のデータを保存")
+            print(f"   {code}: M～R, T, V, X列のデータを保存")
     
     # データの最終行を見つける（新規行のテンプレート用）
     template_row = None
@@ -302,12 +304,13 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         if market:
             print(f"  市場区分: {market}")
         
-        # 新規銘柄の場合、テンプレート行から書式・入力規則をコピー
+        # 新規銘柄の場合、テンプレート行からM～R, T, V, X列の書式・入力規則をコピー
         is_new_stock = code not in existing_data
         if is_new_stock:
-            print(f"  📋 新規銘柄: テンプレート行から書式をコピー")
-            # I列以降の書式・入力規則をコピー（値はコピーしない）
-            for col in range(9, 25):  # I列(9)～X列(24)
+            print(f"  📋 新規銘柄: テンプレート行からM～R, T, V, X列の書式をコピー")
+            # コピー対象: M(13), N(14), O(15), P(16), Q(17), R(18), T(20), V(22), X(24)
+            copy_columns = [13, 14, 15, 16, 17, 18, 20, 22, 24]
+            for col in copy_columns:
                 template_cell = ws.cell(row=template_row, column=col)
                 target_cell = ws.cell(row=current_row, column=col)
                 
@@ -326,28 +329,22 @@ def update_screening_sheet(filepath, stock_codes, market_map):
                 if template_cell.number_format:
                     target_cell.number_format = template_cell.number_format
         
-        # A～H列を書き込み（オレンジ色はポートフォリオアラートのみ）
+        # A～K列を書き込み（背景色なし）
         row = current_row
         
         # A列: 銘柄コード
         ws[f'A{row}'] = code
-        if is_portfolio_alert:
-            ws[f'A{row}'].fill = alert_fill
         ws[f'A{row}'].alignment = center_align
         ws[f'A{row}'].border = thin_border
         
         # B列: 銘柄名
         name = data['name'] if data['name'] and data['name'] != '-' else '-'
         ws[f'B{row}'] = name
-        if is_portfolio_alert:
-            ws[f'B{row}'].fill = alert_fill
         ws[f'B{row}'].alignment = center_align
         ws[f'B{row}'].border = thin_border
         
         # C列: 市場区分（market_mapから取得、空欄の場合もあり）
         ws[f'C{row}'] = market
-        if is_portfolio_alert:
-            ws[f'C{row}'].fill = alert_fill
         ws[f'C{row}'].alignment = center_align
         ws[f'C{row}'].border = thin_border
         
@@ -356,8 +353,6 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'D{row}'] = market_cap
         if market_cap != '-':
             ws[f'D{row}'].number_format = '#,##0'
-        if is_portfolio_alert:
-            ws[f'D{row}'].fill = alert_fill
         ws[f'D{row}'].alignment = center_align
         ws[f'D{row}'].border = thin_border
         
@@ -366,8 +361,6 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'E{row}'] = equity_ratio
         if equity_ratio != '-':
             ws[f'E{row}'].number_format = '0.0'
-        if is_portfolio_alert:
-            ws[f'E{row}'].fill = alert_fill
         ws[f'E{row}'].alignment = center_align
         ws[f'E{row}'].border = thin_border
         
@@ -376,8 +369,6 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'F{row}'] = trading_value
         if trading_value != '-':
             ws[f'F{row}'].number_format = '#,##0'
-        if is_portfolio_alert:
-            ws[f'F{row}'].fill = alert_fill
         ws[f'F{row}'].alignment = center_align
         ws[f'F{row}'].border = thin_border
         
@@ -386,8 +377,6 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'G{row}'] = per
         if per != '-':
             ws[f'G{row}'].number_format = '0.0'
-        if is_portfolio_alert:
-            ws[f'G{row}'].fill = alert_fill
         ws[f'G{row}'].alignment = center_align
         ws[f'G{row}'].border = thin_border
         
@@ -396,36 +385,32 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         ws[f'H{row}'] = pbr
         if pbr != '-':
             ws[f'H{row}'].number_format = '0.0'
-        if is_portfolio_alert:
-            ws[f'H{row}'].fill = alert_fill
         ws[f'H{row}'].alignment = center_align
         ws[f'H{row}'].border = thin_border
         
         # I列: バリュースコア（数式 - 触らない）
         
-        # J列: 売上成長率（自動取得）
+        # J列: 売上成長率（背景色なし）
         revenue_growth = format_value(data['revenue_growth'], 'percent', 1)
         ws[f'J{row}'] = revenue_growth
         if revenue_growth != '-':
             ws[f'J{row}'].number_format = '0.0'
-        if is_portfolio_alert:
-            ws[f'J{row}'].fill = alert_fill
         ws[f'J{row}'].alignment = center_align
         ws[f'J{row}'].border = thin_border
         
-        # K列: ROE（自動取得）
+        # K列: ROE（背景色なし）
         roe = format_value(data['return_on_equity'], 'percent', 1)
         ws[f'K{row}'] = roe
         if roe != '-':
             ws[f'K{row}'].number_format = '0.0'
-        if is_portfolio_alert:
-            ws[f'K{row}'].fill = alert_fill
         ws[f'K{row}'].alignment = center_align
         ws[f'K{row}'].border = thin_border
         
-        # I列以降: 既存データがあれば復元（数式・手動入力を保持）
+        # L列: 成長スコア（数式 - 触らない）
+        
+        # M～R, T, V, X列: 既存データがあれば復元
         if code in existing_data:
-            print(f"  📋 I列以降のデータを復元")
+            print(f"  📋 M～R, T, V, X列のデータを復元")
             for col, cell_data in existing_data[code].items():
                 cell = ws.cell(row=row, column=col)
                 cell.value = cell_data['value']
@@ -439,6 +424,10 @@ def update_screening_sheet(filepath, stock_codes, market_map):
                     cell.border = cell_data['border']
                 if cell_data['number_format']:
                     cell.number_format = cell_data['number_format']
+        
+        # S列: 事業性スコア（数式 - 触らない）
+        # U列: 総合スコア（数式 - 触らない）
+        # W列: 投資比率（数式 - 触らない）
         
         current_row += 1
         
