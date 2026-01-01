@@ -311,17 +311,17 @@ def update_screening_sheet(filepath, stock_codes):
     if portfolio_stocks:
         print(f"   {', '.join(sorted(portfolio_stocks))}")
     
-    # 前回のスクリーニングシートから既存銘柄とI列以降のデータを保存
+    # 前回のスクリーニングシートから既存銘柄とL列以降のデータを保存
     print(f"\n📋 既存データを読み込み中...")
-    existing_data = {}  # {銘柄コード: {row_data: I列以降のデータ}}
+    existing_data = {}  # {銘柄コード: {row_data: L列以降のデータ}}
     
     for row in range(6, 21):  # 6～20行目
         code = ws[f'A{row}'].value
         if code and str(code).strip():
             code = str(code).strip()
-            # I列以降（9列目以降）のデータを保存
+            # L列以降（12列目以降）のデータを保存
             row_data = {}
-            for col in range(9, 25):  # I列(9)～X列(24)
+            for col in range(12, 25):  # L列(12)～X列(24)
                 cell = ws.cell(row=row, column=col)
                 row_data[col] = {
                     'value': cell.value,
@@ -329,14 +329,24 @@ def update_screening_sheet(filepath, stock_codes):
                     'font': cell.font.copy() if cell.font else None,
                     'alignment': cell.alignment.copy() if cell.alignment else None,
                     'border': cell.border.copy() if cell.border else None,
-                    'number_format': cell.number_format
+                    'number_format': cell.number_format,
                 }
             existing_data[code] = row_data
-            print(f"   {code}: I列以降のデータを保存")
+            print(f"   {code}: L列以降のデータを保存")
+    
+    # データの最終行を見つける（新規行のテンプレート用）
+    template_row = None
+    for row in range(6, 21):
+        code = ws[f'A{row}'].value
+        if not code or not str(code).strip():
+            template_row = row
+            break
+    if template_row is None:
+        template_row = 21  # 見つからない場合は21行目
+    
+    print(f"\n📝 テンプレート行: {template_row}行目")
     
     # 統合リストを作成
-    # 1. 今回のスクリーニング銘柄リスト
-    # 2. ポートフォリオにあるが今回のリストにない銘柄
     stock_codes_set = set(stock_codes)
     portfolio_only = portfolio_stocks - stock_codes_set
     
@@ -357,10 +367,10 @@ def update_screening_sheet(filepath, stock_codes):
     )
     center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
     
-    # A～H列のみクリア（I列以降は触らない）
-    print(f"\n🧹 A～H列をクリア中...")
+    # A～K列のみクリア（L列以降は触らない）
+    print(f"\n🧹 A～K列をクリア中...")
     for row in range(6, 21):
-        for col in range(1, 9):  # A列(1)～H列(8)
+        for col in range(1, 12):  # A列(1)～K列(11)
             cell = ws.cell(row=row, column=col)
             cell.value = None
             cell.fill = openpyxl.styles.PatternFill(fill_type=None)
@@ -390,13 +400,36 @@ def update_screening_sheet(filepath, stock_codes):
         
         if data is None:
             print("スキップ")
-            # データ取得失敗でも行は進める
             current_row += 1
             continue
         
         print("✓")
         
-        # A～H列のみ書き込み
+        # 新規銘柄の場合、テンプレート行から書式・入力規則をコピー
+        is_new_stock = code not in existing_data
+        if is_new_stock:
+            print(f"  📋 新規銘柄: テンプレート行から書式をコピー")
+            # L列以降の書式・入力規則をコピー（値はコピーしない）
+            for col in range(12, 25):  # L列(12)～X列(24)
+                template_cell = ws.cell(row=template_row, column=col)
+                target_cell = ws.cell(row=current_row, column=col)
+                
+                # 値はコピーしない（空欄のまま）
+                target_cell.value = None
+                
+                # 書式をコピー
+                if template_cell.fill:
+                    target_cell.fill = template_cell.fill.copy()
+                if template_cell.font:
+                    target_cell.font = template_cell.font.copy()
+                if template_cell.alignment:
+                    target_cell.alignment = template_cell.alignment.copy()
+                if template_cell.border:
+                    target_cell.border = template_cell.border.copy()
+                if template_cell.number_format:
+                    target_cell.number_format = template_cell.number_format
+        
+        # A～K列を書き込み
         row = current_row
         
         # A列: 銘柄コード
@@ -463,9 +496,29 @@ def update_screening_sheet(filepath, stock_codes):
         ws[f'H{row}'].alignment = center_align
         ws[f'H{row}'].border = thin_border
         
-        # I列以降: 既存データがあれば復元（数式・手動入力を保持）
+        # I列: バリュースコア（数式 - 触らない）
+        
+        # J列: 売上成長率（自動取得）✨
+        revenue_growth = format_value(data['revenue_growth'], 'percent', 1)
+        ws[f'J{row}'] = revenue_growth
+        if revenue_growth != '-':
+            ws[f'J{row}'].number_format = '0.0'
+        ws[f'J{row}'].fill = alert_fill if is_portfolio_alert else input_fill
+        ws[f'J{row}'].alignment = center_align
+        ws[f'J{row}'].border = thin_border
+        
+        # K列: ROE（自動取得）✨
+        roe = format_value(data['return_on_equity'], 'percent', 1)
+        ws[f'K{row}'] = roe
+        if roe != '-':
+            ws[f'K{row}'].number_format = '0.0'
+        ws[f'K{row}'].fill = alert_fill if is_portfolio_alert else input_fill
+        ws[f'K{row}'].alignment = center_align
+        ws[f'K{row}'].border = thin_border
+        
+        # L列以降: 既存データがあれば復元（数式・手動入力を保持）
         if code in existing_data:
-            print(f"  📋 I列以降のデータを復元")
+            print(f"  📋 L列以降のデータを復元")
             for col, cell_data in existing_data[code].items():
                 cell = ws.cell(row=row, column=col)
                 cell.value = cell_data['value']
@@ -511,6 +564,7 @@ def update_screening_sheet(filepath, stock_codes):
         print(f"\n注意: これらの銘柄は売却を検討してください。")
     
     print("\n✅ スクリーニングシート更新完了!")
+
 
 def main():
     print("\n" + "=" * 60)
