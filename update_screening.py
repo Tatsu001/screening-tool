@@ -52,8 +52,15 @@ def get_stock_data(ticker_code):
         total_equity = info.get('totalStockholderEquity')
         total_assets = info.get('totalAssets')
         
+        # デバッグ出力
+        print(f"      totalStockholderEquity: {total_equity}")
+        print(f"      totalAssets: {total_assets}")
+        
         if total_equity and total_assets and total_assets != 0:
             equity_ratio = (total_equity / total_assets) * 100
+            print(f"      → 自己資本比率: {equity_ratio:.1f}%")
+        else:
+            print(f"      → 自己資本比率: 計算不可（データ不足）")
         
         # ROE
         return_on_equity = info.get('returnOnEquity')
@@ -177,19 +184,44 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         stock_codes: 更新する銘柄コードのリスト
         market_map: 銘柄コードと市場区分のマッピング辞書
     """
+    import shutil
+    from datetime import datetime
+    
+    # バックアップファイルのパスを生成
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_filepath = filepath.replace('.xlsx', f'_backup_{timestamp}.xlsx')
+    
     print(f"\n📊 ファイルを読み込み中: {filepath}")
+    
+    # バックアップを作成
+    try:
+        print(f"💾 バックアップを作成中...")
+        shutil.copy2(filepath, backup_filepath)
+        print(f"✅ バックアップ完了: {backup_filepath}")
+    except Exception as e:
+        print(f"❌ エラー: バックアップの作成に失敗 - {str(e)}")
+        sys.exit(1)
     
     try:
         wb = openpyxl.load_workbook(filepath)
     except FileNotFoundError:
         print(f"❌ エラー: ファイルが見つかりません - {filepath}")
+        # バックアップを削除
+        if os.path.exists(backup_filepath):
+            os.remove(backup_filepath)
         sys.exit(1)
     except Exception as e:
         print(f"❌ エラー: ファイルの読み込みに失敗 - {str(e)}")
+        # バックアップを削除
+        if os.path.exists(backup_filepath):
+            os.remove(backup_filepath)
         sys.exit(1)
     
     if 'スクリーニング' not in wb.sheetnames:
         print("❌ エラー: 'スクリーニング'シートが見つかりません")
+        # バックアップを削除
+        if os.path.exists(backup_filepath):
+            os.remove(backup_filepath)
         sys.exit(1)
     
     ws = wb['スクリーニング']
@@ -461,8 +493,30 @@ def update_screening_sheet(filepath, stock_codes, market_map):
     try:
         wb.save(filepath)
         print(f"✅ 保存完了: {filepath}")
+        
+        # 正常終了時: バックアップを削除
+        print(f"🗑️  バックアップを削除中...")
+        if os.path.exists(backup_filepath):
+            os.remove(backup_filepath)
+            print(f"✅ バックアップ削除完了")
+            
     except Exception as e:
-        print(f"❌ エラー: ファイルの保存に失敗 - {str(e)}")
+        print(f"\n❌ エラー: ファイルの保存に失敗 - {str(e)}")
+        print(f"\n🔄 ロールバック中...")
+        
+        # エラー時: バックアップから復元
+        if os.path.exists(backup_filepath):
+            try:
+                shutil.copy2(backup_filepath, filepath)
+                print(f"✅ ロールバック完了: 元のファイルを復元しました")
+                print(f"📋 バックアップファイル: {backup_filepath}")
+                print(f"   （確認後、手動で削除してください）")
+            except Exception as restore_error:
+                print(f"❌ ロールバック失敗: {str(restore_error)}")
+                print(f"⚠️  手動で復元してください: {backup_filepath}")
+        else:
+            print(f"⚠️  バックアップファイルが見つかりません")
+        
         sys.exit(1)
     
     # サマリー表示
