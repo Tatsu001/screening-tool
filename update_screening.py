@@ -308,6 +308,11 @@ def update_screening_sheet(filepath, stock_codes, market_map):
     current_row = 6
     portfolio_alerts = []
     
+    # 連続失敗カウンター
+    failed_count = 0
+    MAX_FAILURES = 3  # 連続3回失敗したら中止
+    total_attempts = 0
+    
     # 統合リストの各銘柄を処理
     for idx, code in enumerate(unified_list, start=1):
         code = str(code).strip()
@@ -323,12 +328,41 @@ def update_screening_sheet(filepath, stock_codes, market_map):
         # yfinanceでデータ取得
         print(f"  取得中...", end=" ")
         data = get_stock_data(code)
+        total_attempts += 1
         
         if data is None:
-            print("スキップ")
+            print("❌ 失敗")
+            failed_count += 1
+            
+            # 連続失敗チェック
+            if failed_count >= MAX_FAILURES:
+                print(f"\n{'=' * 60}")
+                print(f"❌ エラー: データ取得に連続{MAX_FAILURES}回失敗しました")
+                print(f"   インターネット接続を確認してください")
+                print(f"   取得試行: {total_attempts}件中{failed_count}件失敗")
+                print(f"{'=' * 60}")
+                
+                # ロールバック処理
+                print(f"\n🔄 ロールバック中...")
+                if os.path.exists(backup_filepath):
+                    try:
+                        shutil.copy2(backup_filepath, filepath)
+                        print(f"✅ ロールバック完了: 元のファイルを復元しました")
+                        print(f"📋 バックアップファイル: {backup_filepath}")
+                        print(f"   （確認後、手動で削除してください）")
+                    except Exception as restore_error:
+                        print(f"❌ ロールバック失敗: {str(restore_error)}")
+                        print(f"⚠️  手動で復元してください: {backup_filepath}")
+                else:
+                    print(f"⚠️  バックアップファイルが見つかりません")
+                
+                sys.exit(1)
+            
             current_row += 1
             continue
         
+        # データ取得成功 - 失敗カウンターをリセット
+        failed_count = 0
         print("✓")
         
         # 市場区分を取得（market_mapから）
